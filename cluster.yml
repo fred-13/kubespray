@@ -1,31 +1,6 @@
 ---
-- hosts: localhost
-  gather_facts: false
-  become: no
-  tasks:
-    - name: "Check ansible version >=2.7.8"
-      assert:
-        msg: "Ansible must be v2.7.8 or higher"
-        that:
-          - ansible_version.string is version("2.7.8", ">=")
-      tags:
-        - check
-  vars:
-    ansible_connection: local
-
-- hosts: all
-  gather_facts: false
-  tasks:
-    - name: "Set up proxy environment"
-      set_fact:
-        proxy_env:
-          http_proxy: "{{ http_proxy | default ('') }}"
-          HTTP_PROXY: "{{ http_proxy | default ('') }}"
-          https_proxy: "{{ https_proxy | default ('') }}"
-          HTTPS_PROXY: "{{ https_proxy | default ('') }}"
-          no_proxy: "{{ no_proxy | default ('') }}"
-          NO_PROXY: "{{ no_proxy | default ('') }}"
-      no_log: true
+- name: Check ansible version
+  import_playbook: ansible_version.yml
 
 - hosts: bastion[0]
   gather_facts: False
@@ -34,6 +9,7 @@
     - { role: bastion-ssh-config, tags: ["localhost", "bastion"] }
 
 - hosts: k8s-cluster:etcd
+  strategy: linear
   any_errors_fatal: "{{ any_errors_fatal | default(true) }}"
   gather_facts: false
   roles:
@@ -41,6 +17,7 @@
     - { role: bootstrap-os, tags: bootstrap-os}
 
 - name: Gather facts
+  tags: always
   import_playbook: facts.yml
 
 - hosts: k8s-cluster:etcd
@@ -51,7 +28,6 @@
     - { role: kubernetes/preinstall, tags: preinstall }
     - { role: "container-engine", tags: "container-engine", when: deploy_container_engine|default(true) }
     - { role: download, tags: download, when: "not skip_downloads" }
-  environment: "{{ proxy_env }}"
 
 - hosts: etcd
   gather_facts: False
@@ -83,14 +59,13 @@
   roles:
     - { role: kubespray-defaults }
     - { role: kubernetes/node, tags: node }
-  environment: "{{ proxy_env }}"
 
 - hosts: kube-master
   gather_facts: False
   any_errors_fatal: "{{ any_errors_fatal | default(true) }}"
   roles:
     - { role: kubespray-defaults }
-    - { role: kubernetes/master, tags: master }
+    - { role: kubernetes/control-plane, tags: master }
     - { role: kubernetes/client, tags: client }
     - { role: kubernetes-apps/cluster_roles, tags: cluster-roles }
 
@@ -135,7 +110,6 @@
   roles:
     - { role: kubespray-defaults }
     - { role: kubernetes-apps, tags: apps }
-  environment: "{{ proxy_env }}"
 
 - hosts: k8s-cluster
   gather_facts: False
